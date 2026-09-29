@@ -1,198 +1,361 @@
-import discord
-from discord.ui import Select, View, Button
-from flask import Flask
-import threading
-from config import SECTIONS
 import os
+import threading
+import discord
+from discord.ext import commands
+from flask import Flask
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
-
-client = discord.Client(intents=intents)
-
+# ==================== (إعداد سيرفر Flask للتشغيل 24/7) ====================
 app = Flask('')
+
 
 @app.route('/')
 def home():
-    return "Advanced System Bot is running 24/7!"
+  return 'Bot is online, active, and running 24/7!'
+
 
 def run():
-    app.run(host='0.0.0.0', port=8080)
+  # Render يستخدم عادة المنفذ 8080 أو المنفذ الافتراضي
+  app.run(host='0.0.0.0', port=8080)
+
 
 def keep_alive():
-    t = threading.Thread(target=run)
-    t.start()
+  t = threading.Thread(target=run)
+  t.start()
 
-# قائمة اختيار الأقسام (Dropdown)
-class SystemSelect(Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(label="اعدادات البوت", value="bot_settings", emoji="⚙️"),
-            discord.SelectOption(label="الاوامر الادارية", value="admin_commands", emoji="🛡️"),
-            discord.SelectOption(label="الاوامر العامة", value="public_commands", emoji="🌐"),
-            discord.SelectOption(label="الاعدادات", value="settings", emoji="🔧"),
-            discord.SelectOption(label="الرولات الخاصة", value="special_roles", emoji="👑"),
-            discord.SelectOption(label="القروبات", value="groups", emoji="👥"),
-        ]
-        super().__init__(placeholder="اختر من القائمة لعرض الاوامر المتقدمة", min_values=1, max_values=1, options=options)
 
-    async def callback(self, interaction: discord.Interaction):
-        selected_key = self.values[0]
-        section_data = SECTIONS.get(selected_key)
-        
-        if section_data:
-            embed = discord.Embed(
-                title=section_data["title"],
-                description=section_data["description"] + "\n\ncoin store",
-                color=0x2b2d31
-            )
-            await interaction.response.edit_message(embed=embed)
-        else:
-            await interaction.response.send_message("عذراً، القسم غير موجود.", ephemeral=True)
+# ==================== (إعدادات البوت والـ Intents) ====================
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.guilds = True
 
-class SystemView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(SystemSelect())
-        self.add_item(Button(label="support", url="https://discord.gg/your-invite-link", emoji="🔗"))
+# البريفكس هو '#'
+bot = commands.Bot(command_prefix='#', intents=intents)
 
-@client.event
+
+@bot.event
 async def on_ready():
-    print(f"Logged in as {client.user} (ID: {client.user.id})")
-    print("Advanced System Bot is fully online and active!")
+  print(f'تم تسجيل الدخول بنجاح باسم: {bot.user.name} (ID: {bot.user.id})')
+  print('البوت يعمل بكامل الأنظمة وجاهز للإدارة على مدار الساعة!')
+  await bot.change_presence(activity=discord.Game(name='#help للأوامر'))
 
-@client.event
-async def on_message(message):
-    if message.author.bot:
-        return
 
-    content = message.content.strip()
+# دالة ذكية لإنشاء أو فحص رتبة الميوت تلقائياً وضبط صلاحياتها في كل الرومات
+async def get_or_create_muted_role(guild):
+  role_name = 'Muted'
+  muted_role = discord.utils.get(guild.roles, name=role_name)
 
-    # أمر إرسال لوحة التحكم
-    if content == '!system':
-        default_section = SECTIONS["bot_settings"]
-        embed = discord.Embed(
-            title=default_section["title"],
-            description=default_section["description"] + "\n\ncoin store",
-            color=0x2b2d31
-        )
-        await message.channel.send(embed=embed, view=SystemView())
-        return
+  if not muted_role:
+    try:
+      muted_role = await guild.create_role(
+          name=role_name,
+          color=discord.Color.from_rgb(47, 49, 54),
+          reason='إنشاء رتبة الميوت الكتابي تلقائياً بواسطة البوت',
+      )
+      # منع الرتبة من الكتابة والتفاعل في جميع قنوات السيرفر
+      for channel in guild.channels:
+        try:
+          await channel.set_permissions(
+              muted_role,
+              send_messages=False,
+              add_reactions=False,
+              speak=False,
+              create_public_threads=False,
+              create_private_threads=False,
+          )
+        except Exception:
+          pass
+    except Exception as e:
+        print(f'خطأ أثناء إنشاء رتبة الميوت: {e}')
 
-    # نظام الاستجابة المتقدم والتنفيذي لأوامر السيرفر (تبدأ بـ #)
-    if content.startswith('#'):
-        parts = content[1:].split()
-        if not parts:
-            return
-        cmd = parts[0].lower()
-        args = parts[1:]
+  return muted_role
 
-        # 1. الأوامر العامة والمعلوماتية
-        if cmd == 'id':
-            user = message.mentions[0] if message.mentions else message.author
-            embed = discord.Embed(title=f"معلومات العضو: {user.name}", color=0x3498db)
-            embed.add_field(name="ID", value=user.id, inline=True)
-            embed.add_field(name="An Account Created", value=user.created_at.strftime("%Y-%m-%d"), inline=True)
-            await message.channel.send(embed=embed)
 
-        elif cmd == 'avatar':
-            user = message.mentions[0] if message.mentions else message.author
-            embed = discord.Embed(title=f"صورة {user.name}", color=0x3498db)
-            embed.set_image(url=user.display_avatar.url)
-            await message.channel.send(embed=embed)
+# ==================== (أوامر المودريشن والإدارة الشاملة) ====================
 
-        elif cmd == 'server':
-            guild = message.guild
-            embed = discord.Embed(title=f"معلومات سيرفر: {guild.name}", color=0x2ecc71)
-            embed.add_field(name="عدد الأعضاء", value=guild.member_count, inline=True)
-            embed.add_field(name="تاريخ الإنشاء", value=guild.created_at.strftime("%Y-%m-%d"), inline=True)
-            if guild.icon:
-                embed.set_thumbnail(url=guild.icon.url)
-            await message.channel.send(embed=embed)
+# 1. أمر الميوت الفعلي (#mute)
+@bot.command(name='mute')
+@commands.has_permissions(manage_roles=True)
+async def mute_member(ctx, member: discord.Member = None, *, reason=None):
+  if not member:
+    return await ctx.send(
+        '❌ | **يرجى إشارة العضو المراد إعطاؤه الميوت! الاستخدام: `#mute @user'
+        ' [السبب]`**'
+    )
 
-        # 2. الأوامر الإدارية الحقيقية (تحتاج صلاحيات)
-        elif cmd == 'clear':
-            if not message.author.guild_permissions.manage_messages:
-                await message.channel.send("❌ ليس لديك صلاحية لإستخدام هذا الأمر (`Manage Messages`).", delete_after=5)
-                return
-            limit = int(args[0]) + 1 if args and args[0].isdigit() else 10
-            deleted = await message.channel.purge(limit=limit)
-            await message.channel.send(f"🧹 تم مسح {len(deleted) - 1} رسالة بنجاح.", delete_after=3)
+  if (
+      ctx.author.top_role.position <= member.top_role.position
+      and ctx.author != ctx.guild.owner
+  ):
+    return await ctx.send(
+        '❌ | **لا يمكنك عمل ميوت لشخص رتبته أعلى منك أو مساوية لك!**'
+    )
 
-        elif cmd == 'ban':
-            if not message.author.guild_permissions.ban_members:
-                await message.channel.send("❌ ليس لديك صلاحية لحظر الأعضاء.", delete_after=5)
-                return
-            if not message.mentions:
-                await message.channel.send("⚠️ يرجى منشن العضو المراد حظره.")
-                return
-            member = message.mentions[0]
-            reason = " ".join(args[1:]) if len(args) > 1 else "بدون سبب"
-            await member.ban(reason=reason)
-            await message.channel.send(f"🔨 تم حظر العضو {member.mention} بنجاح. السبب: {reason}")
+  if ctx.guild.me.top_role.position <= member.top_role.position:
+    return await ctx.send(
+        '❌ | **رتبتي أقل من رتبة هذا العضو، لا يمكنني إعطاؤه الميوت!**'
+    )
 
-        elif cmd == 'kick':
-            if not message.author.guild_permissions.kick_members:
-                await message.channel.send("❌ ليس لديك صلاحية لطرد الأعضاء.", delete_after=5)
-                return
-            if not message.mentions:
-                await message.channel.send("⚠️ يرجى منشن العضو المراد طرده.")
-                return
-            member = message.mentions[0]
-            await member.kick()
-            await message.channel.send(f"👢 تم طرد العضو {member.mention} بنجاح.")
+  muted_role = await get_or_create_muted_role(ctx.guild)
+  if not muted_role:
+    return await ctx.send(
+        '❌ | **فشل النظام في إنشاء أو العثور على رتبة الميوت!**'
+    )
 
-        elif cmd == 'mute':
-            if not message.author.guild_permissions.mute_members:
-                await message.channel.send("❌ ليس لديك صلاحية لإعطاء ميوت.", delete_after=5)
-                return
-            if not message.mentions:
-                await message.channel.send("⚠️ يرجى منشن العضو.")
-                return
-            member = message.mentions[0]
-            # إعطاء صلاحية منع الكتابة للشات الحالي
-            await message.channel.set_permissions(member, send_messages=False)
-            await message.channel.send(f"🔇 تم إعطاء الميوت الكتابي لـ {member.mention}.")
+  try:
+    await member.add_roles(muted_role, reason=reason or 'لا توجد أسباب مرفقة')
+    embed = discord.Embed(
+        description=(
+            f'🔇 | **تم إعطاء الميوت الكتابي الفعلي بنجاح لـ {member.mention}**'
+        ),
+        color=discord.Color.red(),
+    )
+    if reason:
+      embed.add_field(name='السبب:', value=reason, inline=False)
+    await ctx.send(embed=embed)
+  except Exception as e:
+    await ctx.send(f'❌ | **حدث خطأ أثناء إعطاء الرتبة:** `{e}`')
 
-        elif cmd == 'unmute':
-            if not message.author.guild_permissions.mute_members:
-                await message.channel.send("❌ ليس لديك صلاحية.", delete_after=5)
-                return
-            if not message.mentions:
-                await message.channel.send("⚠️ يرجى منشن العضو.")
-                return
-            member = message.mentions[0]
-            await message.channel.set_permissions(member, send_messages=True)
-            await message.channel.send(f"🔊 تم فك الميوت الكتابي عن {member.mention}.")
 
-        elif cmd == 'lock':
-            if not message.author.guild_permissions.manage_channels:
-                await message.channel.send("❌ ليس لديك صلاحية لإدارة الرومات.", delete_after=5)
-                return
-            await message.channel.set_permissions(message.guild.default_role, send_messages=False)
-            await message.channel.send("🔒 تم إغلاق الشات بنجاح.")
+# 2. أمر فك الميوت (#unmute)
+@bot.command(name='unmute')
+@commands.has_permissions(manage_roles=True)
+async def unmute_member(ctx, member: discord.Member = None):
+  if not member:
+    return await ctx.send(
+        '❌ | **يرجى إشارة العضو لفك الميوت عنه! الاستخدام: `#unmute @user`**'
+    )
 
-        elif cmd == 'open' or cmd == 'unlock':
-            if not message.author.guild_permissions.manage_channels:
-                await message.channel.send("❌ ليس لديك صلاحية لإدارة الرومات.", delete_after=5)
-                return
-            await message.channel.set_permissions(message.guild.default_role, send_messages=True)
-            await message.channel.send("🔓 تم فتح الشات بنجاح.")
+  muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
+  if not muted_role or muted_role not in member.roles:
+    return await ctx.send('❌ | **هذا العضو ليس عليه ميوت أساساً!**')
 
-        # 3. أنظمة الحماية والأقسام والقروبات المخصصة
-        elif cmd in ['trust', 'defens', 'spam', 'setup', 'system', 'group', 'addrole']:
-            await message.channel.send(f"⚙️ **نظام السيرفر ({cmd.upper()}):** تم تنفيذ الطلب وتحديث إعدادات النظام بنجاح.")
+  try:
+    await member.remove_roles(muted_role)
+    await ctx.send(
+        f'🔊 | **تم فك الميوت بنجاح عن {member.mention}، صار يقدر يحكي ويكتب'
+        ' براحته.**'
+    )
+  except Exception as e:
+    await ctx.send(f'❌ | **حدث خطأ أثناء إزالة الميوت:** `{e}`')
 
-        else:
-            # أي أمر آخر لم يتم تخصيصه تفصيلياً يستجيب فوراً لكي لا يضل البوت صامتاً
-            await message.channel.send(f"✅ تم تنفيذ أمر **`#{cmd}`** بنجاح بواسطة لوحة تحكم سيرفر السوالف.")
 
-if __name__ == "__main__":
-    keep_alive()
-    token = os.getenv('DISCORD_TOKEN')
-    if token:
-        client.run(token)
-    else:
-        print("Error: DISCORD_TOKEN environment variable not found!")
+# 3. أمر مسح الرسائل (#clear)
+@bot.command(name='clear', aliases=['purge'])
+@commands.has_permissions(manage_messages=True)
+async def clear_messages(ctx, amount: int = 10):
+  if amount > 100:
+    return await ctx.send(
+        '❌ | **عذراً، لا يمكنك مسح أكثر من 100 رسالة دفعة واحدة لأسباب تتعلق'
+        ' بأمان ديسكورد!**'
+    )
+
+  deleted = await ctx.channel.purge(limit=amount + 1)
+  msg = await ctx.send(f'🧹 | **تم بنجاح مسح `{len(deleted) - 1}` رسالة!**')
+  await msg.delete(delay=3)
+
+
+# 4. أمر الطرد (#kick)
+@bot.command(name='kick')
+@commands.has_permissions(kick_members=True)
+async def kick_member(ctx, member: discord.Member = None, *, reason=None):
+  if not member:
+    return await ctx.send(
+        '❌ | **يرجى إشارة العضو المراد طرده! الاستخدام: `#kick @user [السبب]`**'
+    )
+
+  if (
+      ctx.author.top_role.position <= member.top_role.position
+      and ctx.author != ctx.guild.owner
+  ):
+    return await ctx.send(
+        '❌ | **لا يمكنك طرد شخص رتبته أعلى منك أو مساوية لك!**'
+    )
+
+  try:
+    await member.kick(reason=reason)
+    embed = discord.Embed(
+        description=f'👢 | **تم طرد العضو {member.mention} بنجاح!**',
+        color=discord.Color.orange(),
+    )
+    if reason:
+      embed.add_field(name='السبب:', value=reason, inline=False)
+    await ctx.send(embed=embed)
+  except Exception as e:
+    await ctx.send(f'❌ | **حدث خطأ أثناء محاولة الطرد:** `{e}`')
+
+
+# 5. أمر الحظر (#ban)
+@bot.command(name='ban')
+@commands.has_permissions(ban_members=True)
+async def ban_member(ctx, member: discord.Member = None, *, reason=None):
+  if not member:
+    return await ctx.send(
+        '❌ | **يرجى إشارة العضو المراد حظره! الاستخدام: `#ban @user [السبب]`**'
+    )
+
+  if (
+      ctx.author.top_role.position <= member.top_role.position
+      and ctx.author != ctx.guild.owner
+  ):
+    return await ctx.send(
+        '❌ | **لا يمكنك حظر شخص رتبته أعلى منك أو مساوية لك!**'
+    )
+
+  try:
+    await member.ban(reason=reason)
+    embed = discord.Embed(
+        description=f'🔨 | **تم حظر العضو {member.mention} من السيرفر نهائياً!**',
+        color=discord.Color.dark_red(),
+    )
+    if reason:
+      embed.add_field(name='السبب:', value=reason, inline=False)
+    await ctx.send(embed=embed)
+  except Exception as e:
+    await ctx.send(f'❌ | **حدث خطأ أثناء محاولة الحظر:** `{e}`')
+
+
+# 6. أمر إلغاء الحظر (#unban)
+@bot.command(name='unban')
+@commands.has_permissions(ban_members=True)
+async def unban_member(ctx, *, member_name=None):
+  if not member_name:
+    return await ctx.send(
+        '❌ | **يرجى كتابة اسم العضو أو الـ ID لإلغاء الحظر! الاستخدام: `#unban'
+        ' username`**'
+    )
+
+  ban_entries = await ctx.guild.bans()
+  for ban_entry in ban_entries:
+    user = ban_entry.user
+    if (
+        f'{user.name}#{user.discriminator}' == member_name
+        or user.name == member_name
+        or str(user.id) == member_name
+    ):
+      await ctx.guild.unban(user)
+      return await ctx.send(
+          f'🔓 | **تم إلغاء الحظر بنجاح عن العضو:** `{user.name}`'
+      )
+
+  await ctx.send(
+      '❌ | **لم يتم العثور على هذا الشخص في قائمة المحظورين، تأكد من الاسم أو الـ'
+      ' ID بدقة!**'
+  )
+
+
+# 7. أمر قفل الروم (#lock)
+@bot.command(name='lock')
+@commands.has_permissions(manage_channels=True)
+async def lock_channel(ctx, channel: discord.TextChannel = None):
+  channel = channel or ctx.channel
+  overwrite = channel.overwrites_for(ctx.guild.default_role)
+
+  if overwrite.send_messages is False:
+    return await ctx.send(f'🔒 | **الروم {channel.mention} مقفلة مسبقاً!**')
+
+  overwrite.send_messages = False
+  await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+  await ctx.send(
+      f'🔒 | **تم قفل الروم {channel.mention} بنجاح. ممنوع الكتابة فيها حالياً.**'
+  )
+
+
+# 8. أمر فتح الروم (#unlock)
+@bot.command(name='unlock')
+@commands.has_permissions(manage_channels=True)
+async def unlock_channel(ctx, channel: discord.TextChannel = None):
+  channel = channel or ctx.channel
+  overwrite = channel.overwrites_for(ctx.guild.default_role)
+
+  if overwrite.send_messages is True or overwrite.send_messages is None:
+    return await ctx.send(f'🔓 | **الروم {channel.mention} مفتوحة أساساً!**')
+
+  overwrite.send_messages = True
+  await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+  await ctx.send(
+      f'🔓 | **تم فتح الروم {channel.mention} بنجاح. رجعت الأمور طبيعية.**'
+  )
+
+
+# 9. أمر الوضع البطيء (#slowmode)
+@bot.command(name='slowmode', aliases=['slow'])
+@commands.has_permissions(manage_channels=True)
+async def slowmode(ctx, seconds: int = 0):
+  if seconds < 0 or seconds > 21600:
+    return await ctx.send(
+        '❌ | **عذراً، يجب أن يكون الوقت بين 0 و 21600 ثانية (6 ساعات كحد'
+        ' أقصى)!**'
+    )
+
+  await ctx.channel.edit(slowmode_delay=seconds)
+  if seconds == 0:
+    await ctx.send('⏱️ | **تم إيقاف الوضع البطيء في هذه الروم بنجاح.**')
+  else:
+    await ctx.send(
+        f'⏱️ | **تم ضبط الوضع البطيء في هذه الروم على `{seconds}` ثانية.**'
+    )
+
+
+# 10. أمر معلومات العضو (#userinfo)
+@bot.command(name='userinfo', aliases=['whois'])
+async def user_info(ctx, member: discord.Member = None):
+  member = member or ctx.author
+  roles = [role.mention for role in member.roles[1:]]  # استثناء رتبة @everyone
+  roles_str = ', '.join(roles) if roles else 'لا توجد رتب'
+
+  embed = discord.Embed(
+      title=f'معلومات عن: {member.name}',
+      color=member.color,
+      timestamp=ctx.message.created_at,
+  )
+  embed.set_thumbnail(url=member.display_avatar.url)
+  embed.add_field(name='🆔 المعرف (ID):', value=member.id, inline=True)
+  embed.add_field(name='🏷️ الاسم المستعار:', value=member.display_name, inline=True)
+  embed.add_field(
+      name='📅 تاريخ الانضمام للسيرفر:',
+      value=member.joined_at.strftime('%Y-%m-%d %H:%M'),
+      inline=False,
+  )
+  embed.add_field(
+      name='🤖 تاريخ إنشاء الحساب:',
+      value=member.created_at.strftime('%Y-%m-%d %H:%M'),
+      inline=False,
+  )
+  embed.add_field(
+      name=f'🎭 الرتب ({len(member.roles)-1}):',
+      value=roles_str,
+      inline=False,
+  )
+
+  await ctx.send(embed=embed)
+
+
+# ==================== (نظام معالجة الأخطاء العام) ====================
+@bot.event
+async def on_command_error(ctx, error):
+  if isinstance(error, commands.MissingPermissions):
+    await ctx.send('❌ | **ليس لديك الصلاحيات الكافية لاستخدام هذا الأمر!**')
+  elif isinstance(error, commands.MissingRequiredArgument):
+    await ctx.send(
+        '❌ | **هناك معلومات ناقصة في الأمر، تحقق من الطريقة الصحيحة للاستخدام!**'
+    )
+  elif isinstance(error, commands.CommandNotFound):
+    pass  # يتجاهل الأوامر الخاطئة لمنع الإزعاج
+
+
+# ==================== (تشغيل السيرفر والبوت معاً) ====================
+if __name__ == '__main__':
+  # تشغيل سيرفر الويب في الخلفية (Flask)
+  keep_alive()
+
+  # سحب التوكن أوتوماتيكياً من Environment Variables في Render (تأكد أن اسم المتغير لديك هو TOKEN)
+  TOKEN = os.getenv('TOKEN')
+
+  if not TOKEN:
+    print(
+        '❌ خطأ: لم يتم العثور على متغير التوكن `TOKEN` في إعدادات البيئة لـ'
+        ' Render!'
+    )
+  else:
+    bot.run(TOKEN)
