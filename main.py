@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 from flask import Flask
 
-# ==================== (إعداد سيرفر Flask للتشغيل 24/7) ====================
+# ==================== (سيرفر Flask للتشغيل 24/7 على Render) ====================
 app = Flask('')
 
 
@@ -14,8 +14,8 @@ def home():
 
 
 def run():
-  # Render يستخدم عادة المنفذ 8080 أو المنفذ الافتراضي
-  app.run(host='0.0.0.0', port=8080)
+  port = int(os.environ.get('PORT', 8080))
+  app.run(host='0.0.0.0', port=port)
 
 
 def keep_alive():
@@ -23,13 +23,12 @@ def keep_alive():
   t.start()
 
 
-# ==================== (إعدادات البوت والـ Intents) ====================
+# ==================== (إعدادات البوت والـ Intents الأساسية) ====================
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True
+intents.message_content = True  # مفتاح قراءة رسائل الأوامر البادئة بـ #
 intents.guilds = True
 
-# البريفكس هو '#'
 bot = commands.Bot(command_prefix='#', intents=intents)
 
 
@@ -52,7 +51,6 @@ async def get_or_create_muted_role(guild):
           color=discord.Color.from_rgb(47, 49, 54),
           reason='إنشاء رتبة الميوت الكتابي تلقائياً بواسطة البوت',
       )
-      # منع الرتبة من الكتابة والتفاعل في جميع قنوات السيرفر
       for channel in guild.channels:
         try:
           await channel.set_permissions(
@@ -66,12 +64,12 @@ async def get_or_create_muted_role(guild):
         except Exception:
           pass
     except Exception as e:
-        print(f'خطأ أثناء إنشاء رتبة الميوت: {e}')
+      print(f'خطأ أثناء إنشاء رتبة الميوت: {e}')
 
   return muted_role
 
 
-# ==================== (أوامر المودريشن والإدارة الشاملة) ====================
+# ==================== (أوامر الإدارة والمودريشن الشاملة) ====================
 
 # 1. أمر الميوت الفعلي (#mute)
 @bot.command(name='mute')
@@ -82,7 +80,6 @@ async def mute_member(ctx, member: discord.Member = None, *, reason=None):
         '❌ | **يرجى إشارة العضو المراد إعطاؤه الميوت! الاستخدام: `#mute @user'
         ' [السبب]`**'
     )
-
   if (
       ctx.author.top_role.position <= member.top_role.position
       and ctx.author != ctx.guild.owner
@@ -90,7 +87,6 @@ async def mute_member(ctx, member: discord.Member = None, *, reason=None):
     return await ctx.send(
         '❌ | **لا يمكنك عمل ميوت لشخص رتبته أعلى منك أو مساوية لك!**'
     )
-
   if ctx.guild.me.top_role.position <= member.top_role.position:
     return await ctx.send(
         '❌ | **رتبتي أقل من رتبة هذا العضو، لا يمكنني إعطاؤه الميوت!**'
@@ -125,7 +121,6 @@ async def unmute_member(ctx, member: discord.Member = None):
     return await ctx.send(
         '❌ | **يرجى إشارة العضو لفك الميوت عنه! الاستخدام: `#unmute @user`**'
     )
-
   muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
   if not muted_role or muted_role not in member.roles:
     return await ctx.send('❌ | **هذا العضو ليس عليه ميوت أساساً!**')
@@ -146,10 +141,8 @@ async def unmute_member(ctx, member: discord.Member = None):
 async def clear_messages(ctx, amount: int = 10):
   if amount > 100:
     return await ctx.send(
-        '❌ | **عذراً، لا يمكنك مسح أكثر من 100 رسالة دفعة واحدة لأسباب تتعلق'
-        ' بأمان ديسكورد!**'
+        '❌ | **عذراً، لا يمكنك مسح أكثر من 100 رسالة دفعة واحدة!**'
     )
-
   deleted = await ctx.channel.purge(limit=amount + 1)
   msg = await ctx.send(f'🧹 | **تم بنجاح مسح `{len(deleted) - 1}` رسالة!**')
   await msg.delete(delay=3)
@@ -163,7 +156,6 @@ async def kick_member(ctx, member: discord.Member = None, *, reason=None):
     return await ctx.send(
         '❌ | **يرجى إشارة العضو المراد طرده! الاستخدام: `#kick @user [السبب]`**'
     )
-
   if (
       ctx.author.top_role.position <= member.top_role.position
       and ctx.author != ctx.guild.owner
@@ -193,7 +185,6 @@ async def ban_member(ctx, member: discord.Member = None, *, reason=None):
     return await ctx.send(
         '❌ | **يرجى إشارة العضو المراد حظره! الاستخدام: `#ban @user [السبب]`**'
     )
-
   if (
       ctx.author.top_role.position <= member.top_role.position
       and ctx.author != ctx.guild.owner
@@ -224,7 +215,6 @@ async def unban_member(ctx, *, member_name=None):
         '❌ | **يرجى كتابة اسم العضو أو الـ ID لإلغاء الحظر! الاستخدام: `#unban'
         ' username`**'
     )
-
   ban_entries = await ctx.guild.bans()
   for ban_entry in ban_entries:
     user = ban_entry.user
@@ -237,7 +227,6 @@ async def unban_member(ctx, *, member_name=None):
       return await ctx.send(
           f'🔓 | **تم إلغاء الحظر بنجاح عن العضو:** `{user.name}`'
       )
-
   await ctx.send(
       '❌ | **لم يتم العثور على هذا الشخص في قائمة المحظورين، تأكد من الاسم أو الـ'
       ' ID بدقة!**'
@@ -250,7 +239,6 @@ async def unban_member(ctx, *, member_name=None):
 async def lock_channel(ctx, channel: discord.TextChannel = None):
   channel = channel or ctx.channel
   overwrite = channel.overwrites_for(ctx.guild.default_role)
-
   if overwrite.send_messages is False:
     return await ctx.send(f'🔒 | **الروم {channel.mention} مقفلة مسبقاً!**')
 
@@ -267,7 +255,6 @@ async def lock_channel(ctx, channel: discord.TextChannel = None):
 async def unlock_channel(ctx, channel: discord.TextChannel = None):
   channel = channel or ctx.channel
   overwrite = channel.overwrites_for(ctx.guild.default_role)
-
   if overwrite.send_messages is True or overwrite.send_messages is None:
     return await ctx.send(f'🔓 | **الروم {channel.mention} مفتوحة أساساً!**')
 
@@ -284,10 +271,8 @@ async def unlock_channel(ctx, channel: discord.TextChannel = None):
 async def slowmode(ctx, seconds: int = 0):
   if seconds < 0 or seconds > 21600:
     return await ctx.send(
-        '❌ | **عذراً، يجب أن يكون الوقت بين 0 و 21600 ثانية (6 ساعات كحد'
-        ' أقصى)!**'
+        '❌ | **عذراً، يجب أن يكون الوقت بين 0 و 21600 ثانية!**'
     )
-
   await ctx.channel.edit(slowmode_delay=seconds)
   if seconds == 0:
     await ctx.send('⏱️ | **تم إيقاف الوضع البطيء في هذه الروم بنجاح.**')
@@ -301,7 +286,7 @@ async def slowmode(ctx, seconds: int = 0):
 @bot.command(name='userinfo', aliases=['whois'])
 async def user_info(ctx, member: discord.Member = None):
   member = member or ctx.author
-  roles = [role.mention for role in member.roles[1:]]  # استثناء رتبة @everyone
+  roles = [role.mention for role in member.roles[1:]]
   roles_str = ', '.join(roles) if roles else 'لا توجد رتب'
 
   embed = discord.Embed(
@@ -327,7 +312,6 @@ async def user_info(ctx, member: discord.Member = None):
       value=roles_str,
       inline=False,
   )
-
   await ctx.send(embed=embed)
 
 
@@ -341,21 +325,14 @@ async def on_command_error(ctx, error):
         '❌ | **هناك معلومات ناقصة في الأمر، تحقق من الطريقة الصحيحة للاستخدام!**'
     )
   elif isinstance(error, commands.CommandNotFound):
-    pass  # يتجاهل الأوامر الخاطئة لمنع الإزعاج
+    pass
 
 
-# ==================== (تشغيل السيرفر والبوت معاً) ====================
+# ==================== (التشغيل النهائي) ====================
 if __name__ == '__main__':
-  # تشغيل سيرفر الويب في الخلفية (Flask)
   keep_alive()
-
-  # سحب التوكن أوتوماتيكياً من Environment Variables في Render (تأكد أن اسم المتغير لديك هو TOKEN)
   TOKEN = os.getenv('TOKEN')
-
   if not TOKEN:
-    print(
-        '❌ خطأ: لم يتم العثور على متغير التوكن `TOKEN` في إعدادات البيئة لـ'
-        ' Render!'
-    )
+    print('❌ خطأ: لم يتم العثور على متغير التوكن `TOKEN` في ريندر!')
   else:
     bot.run(TOKEN)
